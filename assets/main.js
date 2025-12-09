@@ -54,19 +54,25 @@ async function initHomePage() {
 
     const now = new Date();
 
+    // Debug : afficher tous les matchs et leurs statuts
+    console.log("Tous les matchs :", matches);
+    console.log("Date actuelle :", now);
+
     // Séparation des matchs joués et à venir
 
-    const played = matches.filter((m) =>
+    const played = matches.filter((m) => {
+      const matchDate = new Date(m.match_date);
+      console.log(`Match ${m.home_team} vs ${m.away_team} : status=${m.status}, date=${matchDate}, isPast=${matchDate <= now}`);
+      return m.status === "played" && matchDate <= now;
+    });
 
-      m.status === "played" && new Date(m.match_date) <= now
+    const scheduled = matches.filter((m) => {
+      const matchDate = new Date(m.match_date);
+      return m.status === "scheduled" && matchDate > now;
+    });
 
-    );
-
-    const scheduled = matches.filter((m) =>
-
-      m.status === "scheduled" && new Date(m.match_date) >= now
-
-    );
+    console.log("Matchs joués :", played);
+    console.log("Matchs à venir :", scheduled);
 
     // Dernier match joué = le plus récent dans le passé
 
@@ -96,7 +102,7 @@ async function initHomePage() {
 
       );
 
-      nextMatch = scheduled[1];
+      nextMatch = scheduled[0];
 
     }
 
