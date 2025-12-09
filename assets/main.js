@@ -96,7 +96,7 @@ async function initHomePage() {
 
       );
 
-      nextMatch = scheduled[0];
+      nextMatch = scheduled[1];
 
     }
 
