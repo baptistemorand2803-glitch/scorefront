@@ -59,16 +59,24 @@ async function initHomePage() {
     console.log("Date actuelle :", now);
 
     // Séparation des matchs joués et à venir
+    // On accepte plusieurs variantes de statut et on retombe sur la comparaison par date.
+    const normalizeStatus = (s) => (s || "").toString().toLowerCase();
+    const upcomingStatuses = new Set(["scheduled", "upcoming", "future", "pending"]);
+    const playedStatuses = new Set(["played", "finished", "completed"]);
 
     const played = matches.filter((m) => {
-      const matchDate = new Date(m.match_date);
-      console.log(`Match ${m.home_team} vs ${m.away_team} : status=${m.status}, date=${matchDate}, isPast=${matchDate <= now}`);
-      return m.status === "played" && matchDate <= now;
+      const matchDate = parseMatchDate(m.match_date);
+      const st = normalizeStatus(m.status);
+      console.log(`Match ${m.home_team} vs ${m.away_team} : rawStatus=${m.status}, norm=${st}, date=${matchDate}, isPast=${matchDate <= now}`);
+      // Si le statut indique joué, ou si la date est passée => considéré joué
+      return playedStatuses.has(st) || matchDate <= now;
     });
 
     const scheduled = matches.filter((m) => {
-      const matchDate = new Date(m.match_date);
-      return m.status === "scheduled" && matchDate > now;
+      const matchDate = parseMatchDate(m.match_date);
+      const st = normalizeStatus(m.status);
+      // Si le statut est clairement 'à venir' ou si la date est dans le futur => considéré à venir
+      return upcomingStatuses.has(st) || matchDate > now;
     });
 
     console.log("Matchs joués :", played);
@@ -82,7 +90,7 @@ async function initHomePage() {
 
       played.sort(
 
-        (a, b) => new Date(a.match_date) - new Date(b.match_date)
+        (a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date)
 
       );
 
@@ -98,7 +106,7 @@ async function initHomePage() {
 
       scheduled.sort(
 
-        (a, b) => new Date(a.match_date) - new Date(b.match_date)
+        (a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date)
 
       );
 
@@ -120,7 +128,7 @@ async function initHomePage() {
 
 function formatMatchDate(dateString) {
 
-  const date = new Date(dateString);
+  const date = parseMatchDate(dateString);
 
   // Affichage simple : JJ/MM/AAAA HH:MM
 
@@ -136,6 +144,27 @@ function formatMatchDate(dateString) {
 
   return `${day}/${month}/${year} ${hours}h${minutes}`;
 
+}
+
+// Parse une date fournie par la base (ex: "YYYY-MM-DD HH:MM:SS").
+// On essaye plusieurs variantes pour couvrir différents navigateurs / formats.
+function parseMatchDate(dateString) {
+  if (!dateString) return new Date(NaN);
+  if (dateString instanceof Date) return dateString;
+  let s = String(dateString).trim();
+
+  // 1) essai direct
+  let d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+
+  // 2) remplacer l'espace entre date et heure par 'T' -> "YYYY-MM-DDTHH:MM:SS"
+  const t = s.replace(' ', 'T');
+  d = new Date(t);
+  if (!isNaN(d.getTime())) return d;
+
+  // 3) essayer en forçant UTC (ajouter 'Z') si les timestamps sont en UTC
+  d = new Date(t + 'Z');
+  return d;
 }
 
 function updateHomePage(nextMatch, lastMatch) {
@@ -218,7 +247,7 @@ function renderMatchesTable(matches) {
   }
 
   // Option : trier par date croissante
-  matches.sort((a, b) => new Date(a.match_date) - new Date(b.match_date));
+  matches.sort((a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date));
 
   matches.forEach((match) => {
     const tr = document.createElement("tr");
