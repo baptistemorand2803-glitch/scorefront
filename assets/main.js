@@ -262,16 +262,30 @@ function renderMatchesTable(matches) {
 // ---------- Classement / Standings ----------
 async function initStandingsPage() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/standings`);
-    if (!response.ok) {
-      throw new Error(`Erreur API (${response.status})`);
+    // Essai : endpoint dédié /api/standings
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/standings`);
+      if (response.ok) {
+        const standings = await response.json();
+        renderStandingsTable(standings);
+        return;
+      }
+      console.warn('/api/standings returned', response.status);
+    } catch (err) {
+      console.warn('Fetch /api/standings failed:', err);
     }
-    const standings = await response.json();
-    renderStandingsTable(standings);
+
+    // Fallback : récupérer les matchs et calculer le classement
+    const respMatches = await fetch(`${API_BASE_URL}/api/matches`);
+    if (!respMatches.ok) {
+      throw new Error(`Erreur API matches (${respMatches.status})`);
+    }
+    const matches = await respMatches.json();
+    const computed = computeStandingsFromMatches(matches);
+    renderStandingsTable(computed);
   } catch (error) {
     console.error(error);
-    // Si l'API /api/standings n'existe pas, afficher message clair
-    showError("Impossible de charger le classement (API ou réseau indisponible). Vérifiez /api/standings.");
+    showError("Impossible de charger le classement (API ou réseau indisponible).");
   }
 }
 
