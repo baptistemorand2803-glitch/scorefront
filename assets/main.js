@@ -416,16 +416,101 @@ function computeStandingsFromMatches(matches) {
       goal_diff: gd,
       points: s.points,
     };
-  });
+    table.sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
+      if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+      return a.team.localeCompare(b.team);
+    });
 
-  table.sort((a, b) => {
-    if (b.points !== a.points) return b.points - a.points;
-    if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
-    if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
-    return a.team.localeCompare(b.team);
-  });
+    // Head-to-head tie-breaker: for groups with equal points, compute mini-table from matches
+    const result = [];
+    for (let i = 0; i < table.length; ) {
+      const samePts = table.filter((t) => t.points === table[i].points);
+      // find block start
+      let start = i;
+      while (start > 0 && table[start - 1].points === table[i].points) start--;
+      // find block end
+      let end = i + 1;
+      while (end < table.length && table[end].points === table[i].points) end++;
+      const block = table.slice(start, end);
+      if (block.length === 1) {
+        result.push(block[0]);
+      } else {
+        // compute head-to-head stats among teams in block
+        const teamsSet = new Set(block.map((r) => r.team));
+        const miniStats = {};
+        block.forEach((r) => miniStats[r.team] = { points: 0, goal_diff: 0, goals_for: 0 });
 
-  // Ajouter la position
+        matches.forEach((m) => {
+          const home = m.home_team;
+          const away = m.away_team;
+          if (!teamsSet.has(home) || !teamsSet.has(away)) return;
+          const matchDate = parseMatchDate(m.match_date);
+          const hasScores = m.home_score != null && m.away_score != null;
+          const status = (m.status || '').toString().toLowerCase();
+          const isPlayed = hasScores || playedStatuses.has(status) || matchDate <= now;
+          if (!isPlayed) return;
+          const hs = Number(m.home_score ?? 0);
+          const as = Number(m.away_score ?? 0);
+
+          miniStats[home].goals_for += hs;
+          miniStats[home].goal_diff += hs - as;
+          miniStats[away].goals_for += as;
+          miniStats[away].goal_diff += as - hs;
+
+          if (hs > as) {
+            miniStats[home].points += 3;
+          } else if (hs < as) {
+            miniStats[away].points += 3;
+          } else {
+            miniStats[home].points += 1;
+            miniStats[away].points += 1;
+          }
+        });
+
+        // sort block by head-to-head points, then head-to-head GD, then head-to-head GF, then overall GD, overall GF, name
+        block.sort((A, B) => {
+          const a = miniStats[A.team];
+          const b = miniStats[B.team];
+          if ((b.points || 0) !== (a.points || 0)) return (b.points || 0) - (a.points || 0);
+          if ((b.goal_diff || 0) !== (a.goal_diff || 0)) return (b.goal_diff || 0) - (a.goal_diff || 0);
+          if ((b.goals_for || 0) !== (a.goals_for || 0)) return (b.goals_for || 0) - (a.goals_for || 0);
+          if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
+          if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+          return A.team.localeCompare(B.team);
+        });
+
+        block.forEach((r) => result.push(r));
+      }
+      i = end;
+    }
+
+    // Ajouter la position
+    return result.map((r, idx) => ({ position: idx + 1, ...r }));
+  const ranked = [];
+  for (let i = 0; i < table.length; ) {
+    // find block with same points
+    const j = table.findIndex((t, idx) => idx > i && t.points !== table[i].points);
+    const end = j === -1 ? table.length : j;
+    const block = table.slice(i, end);
+    if (block.length > 1) {
+      // trier le block en utilisant confrontation directe
+      const names = new Set(block.map((r) => r.team));
+      // calculer mini-stats head-to-head
+      const mini = {};
+      block.forEach((r) => {
+        mini[r.team] = { points: 0, goal_diff: 0, goals_for: 0 };
+      });
+      // parcourir les matches (on réutilise 'matches' variable from outer scope? not available here)
+      // We don't have matches here, but we can reconstruct from stats? Instead compute head-to-head from provided 'matches' parameter by recomputing here: we need matches input. To keep function pure, we'll recompute using the original matches array passed to computeStandingsFromMatches.
+    }
+    i = end;
+  }
+
+  // To implement head-to-head properly we need access to the original matches array.
+  // We'll rebuild ranking using another pass that has matches available by closing over it.
+  // (The following fallback keeps current order when head-to-head data not computed.)
   return table.map((r, idx) => ({ position: idx + 1, ...r }));
 }
 
