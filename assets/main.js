@@ -14,6 +14,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initResultsPage();
 
+  } else if (page === "classement") {
+
+    initStandingsPage();
+
   }
 
 });
@@ -282,5 +286,83 @@ function renderMatchesTable(matches) {
 
   });
 
+}
+
+// ---------- Classement / Standings ----------
+async function initStandingsPage() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/standings`);
+    if (!response.ok) {
+      throw new Error(`Erreur API (${response.status})`);
+    }
+    const standings = await response.json();
+    renderStandingsTable(standings);
+  } catch (error) {
+    console.error(error);
+    // Si l'API /api/standings n'existe pas, afficher message clair
+    showError("Impossible de charger le classement (API ou réseau indisponible). Vérifiez /api/standings.");
+  }
+}
+
+function renderStandingsTable(standings) {
+  const container = document.getElementById("standings-container");
+  if (!container) return;
+
+  if (!standings || standings.length === 0) {
+    container.innerHTML = "<p>Aucun classement disponible.</p>";
+    return;
+  }
+
+  // Table headers FR
+  const table = document.createElement('table');
+  table.className = 'standings-table';
+  const thead = document.createElement('thead');
+  thead.innerHTML = `<tr>
+    <th>Pos</th>
+    <th>Équipe</th>
+    <th>J</th>
+    <th>G</th>
+    <th>N</th>
+    <th>P</th>
+    <th>BP</th>
+    <th>BC</th>
+    <th>Diff</th>
+    <th>Pts</th>
+  </tr>`;
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  // Attendu: tableau d'objets { position, team, played, won, draw, lost, goals_for, goals_against, goal_diff, points }
+  standings.forEach((row) => {
+    const tr = document.createElement('tr');
+    const pos = document.createElement('td'); pos.textContent = row.position ?? '';
+    const team = document.createElement('td'); team.textContent = row.team ?? row.name ?? '';
+    const played = document.createElement('td'); played.textContent = row.played ?? row.p ?? '';
+    const won = document.createElement('td'); won.textContent = row.won ?? row.w ?? '';
+    const draw = document.createElement('td'); draw.textContent = row.draw ?? row.d ?? '';
+    const lost = document.createElement('td'); lost.textContent = row.lost ?? row.l ?? '';
+    const gf = document.createElement('td'); gf.textContent = row.goals_for ?? row.gf ?? '';
+    const ga = document.createElement('td'); ga.textContent = row.goals_against ?? row.ga ?? '';
+    const gd = document.createElement('td'); gd.textContent = row.goal_diff ?? row.gd ?? '';
+    const pts = document.createElement('td'); pts.textContent = row.points ?? row.pts ?? '';
+
+    tr.appendChild(pos);
+    tr.appendChild(team);
+    tr.appendChild(played);
+    tr.appendChild(won);
+    tr.appendChild(draw);
+    tr.appendChild(lost);
+    tr.appendChild(gf);
+    tr.appendChild(ga);
+    tr.appendChild(gd);
+    tr.appendChild(pts);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  container.innerHTML = '';
+  container.appendChild(table);
 }
 
