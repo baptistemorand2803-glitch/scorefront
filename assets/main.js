@@ -262,16 +262,30 @@ function renderMatchesTable(matches) {
 // ---------- Classement / Standings ----------
 async function initStandingsPage() {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/standings`);
-    if (!response.ok) {
-      throw new Error(`Erreur API (${response.status})`);
+    // Essai : endpoint dédié /api/standings
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/standings`);
+      if (response.ok) {
+        const standings = await response.json();
+        renderStandingsTable(standings);
+        return;
+      }
+      console.warn('/api/standings returned', response.status);
+    } catch (err) {
+      console.warn('Fetch /api/standings failed:', err.message || err);
     }
-    const standings = await response.json();
-    renderStandingsTable(standings);
+
+    // Fallback : récupérer les matchs et calculer le classement
+    const respMatches = await fetch(`${API_BASE_URL}/api/matches`);
+    if (!respMatches.ok) {
+      throw new Error(`Erreur API matches (${respMatches.status})`);
+    }
+    const matches = await respMatches.json();
+    const computed = computeStandingsFromMatches(matches);
+    renderStandingsTable(computed);
   } catch (error) {
     console.error(error);
-    // Si l'API /api/standings n'existe pas, afficher message clair
-    showError("Impossible de charger le classement (API ou réseau indisponible). Vérifiez /api/standings.");
+    showError("Impossible de charger le classement (API ou réseau indisponible).");
   }
 }
 
@@ -411,7 +425,70 @@ function computeStandingsFromMatches(matches) {
     return a.team.localeCompare(b.team);
   });
 
+  // Head-to-head tie-breaker for teams with equal points
+  const finalRanking = [];
+  for (let i = 0; i < table.length; ) {
+    // find block of teams with same points starting at i
+    const pts = table[i].points;
+    let j = i + 1;
+    while (j < table.length && table[j].points === pts) j++;
+    const block = table.slice(i, j);
+
+    if (block.length === 1) {
+      finalRanking.push(block[0]);
+    } else {
+      // compute head-to-head mini-table among teams in block
+      const teamsSet = new Set(block.map((r) => r.team));
+      const mini = {};
+      block.forEach((r) => { mini[r.team] = { points: 0, goal_diff: 0, goals_for: 0 }; });
+
+      matches.forEach((m) => {
+        const home = m.home_team;
+        const away = m.away_team;
+        if (!teamsSet.has(home) || !teamsSet.has(away)) return;
+        const matchDate = parseMatchDate(m.match_date);
+        const hasScores = m.home_score != null && m.away_score != null;
+        const status = (m.status || '').toString().toLowerCase();
+        const isPlayed = hasScores || playedStatuses.has(status) || matchDate <= now;
+        if (!isPlayed) return;
+
+        const hs = Number(m.home_score ?? 0);
+        const as = Number(m.away_score ?? 0);
+
+        mini[home].goals_for += hs;
+        mini[home].goal_diff += hs - as;
+        mini[away].goals_for += as;
+        mini[away].goal_diff += as - hs;
+
+        if (hs > as) {
+          mini[home].points += 3;
+        } else if (hs < as) {
+          mini[away].points += 3;
+        } else {
+          mini[home].points += 1;
+          mini[away].points += 1;
+        }
+      });
+
+      // sort block by head-to-head then overall
+      block.sort((A, B) => {
+        const a = mini[A.team] || { points: 0, goal_diff: 0, goals_for: 0 };
+        const b = mini[B.team] || { points: 0, goal_diff: 0, goals_for: 0 };
+        if (b.points !== a.points) return b.points - a.points;
+        if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
+        if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+        if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
+        if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+        return A.team.localeCompare(B.team);
+      });
+
+      block.forEach((r) => finalRanking.push(r));
+    }
+
+    i = j;
+  }
+
   // Ajouter la position
-  return table.map((r, idx) => ({ position: idx + 1, ...r }));
+  return finalRanking.map((r, idx) => ({ position: idx + 1, ...r }));
 }
 
