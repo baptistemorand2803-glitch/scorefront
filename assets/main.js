@@ -43,28 +43,22 @@ function showError(message) {
 }
 
 async function initHomePage() {
-
-    // Premier essai : endpoint dédié /api/standings
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/standings`);
-      if (response.ok) {
-        const standings = await response.json();
-        renderStandingsTable(standings);
-        return;
-      }
-      console.warn('/api/standings returned', response.status);
-    } catch (err) {
-      console.warn('Fetch /api/standings failed:', err);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/matches`);
+    if (!response.ok) {
+      throw new Error(`Erreur API (${response.status})`);
     }
 
-    // Fallback : calculer le classement à partir de /api/matches
-    const respMatches = await fetch(`${API_BASE_URL}/api/matches`);
-    if (!respMatches.ok) {
-      throw new Error(`Erreur API matches (${respMatches.status})`);
-    }
-    const matches = await respMatches.json();
-    const computed = computeStandingsFromMatches(matches);
-    renderStandingsTable(computed);
+    const matches = await response.json();
+    const now = new Date();
+
+    // Debug : afficher tous les matchs et leurs statuts
+    console.log("Tous les matchs :", matches);
+    console.log("Date actuelle :", now);
+
+    // Séparation des matchs joués et à venir
+    // On accepte plusieurs variantes de statut et on retombe sur la comparaison par date.
+    const normalizeStatus = (s) => (s || "").toString().toLowerCase();
     const upcomingStatuses = new Set(["scheduled", "upcoming", "future", "pending"]);
     const playedStatuses = new Set(["played", "finished", "completed"]);
 
@@ -87,47 +81,24 @@ async function initHomePage() {
     console.log("Matchs à venir :", scheduled);
 
     // Dernier match joué = le plus récent dans le passé
-
     let lastMatch = null;
-
     if (played.length > 0) {
-
-      played.sort(
-
-        (a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date)
-
-      );
-
+      played.sort((a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date));
       lastMatch = played[played.length - 1];
-
     }
 
     // Prochain match = le plus proche dans le futur
-
     let nextMatch = null;
-
     if (scheduled.length > 0) {
-
-      scheduled.sort(
-
-        (a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date)
-
-      );
-
+      scheduled.sort((a, b) => parseMatchDate(a.match_date) - parseMatchDate(b.match_date));
       nextMatch = scheduled[0];
-
     }
 
     updateHomePage(nextMatch, lastMatch);
-
   } catch (error) {
-
     console.error(error);
-
     showError("Impossible de charger les données (API ou réseau indisponible).");
-
   }
-
 }
 
 function formatMatchDate(dateString) {
