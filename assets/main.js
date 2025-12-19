@@ -44,27 +44,27 @@ function showError(message) {
 
 async function initHomePage() {
 
-  try {
-
-    const response = await fetch(`${API_BASE_URL}/api/matches`);
-
-    if (!response.ok) {
-
-      throw new Error(`Erreur API (${response.status})`);
-
+    // Premier essai : endpoint dédié /api/standings
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/standings`);
+      if (response.ok) {
+        const standings = await response.json();
+        renderStandingsTable(standings);
+        return;
+      }
+      console.warn('/api/standings returned', response.status);
+    } catch (err) {
+      console.warn('Fetch /api/standings failed:', err);
     }
 
-    const matches = await response.json();
-
-    const now = new Date();
-
-    // Debug : afficher tous les matchs et leurs statuts
-    console.log("Tous les matchs :", matches);
-    console.log("Date actuelle :", now);
-
-    // Séparation des matchs joués et à venir
-    // On accepte plusieurs variantes de statut et on retombe sur la comparaison par date.
-    const normalizeStatus = (s) => (s || "").toString().toLowerCase();
+    // Fallback : calculer le classement à partir de /api/matches
+    const respMatches = await fetch(`${API_BASE_URL}/api/matches`);
+    if (!respMatches.ok) {
+      throw new Error(`Erreur API matches (${respMatches.status})`);
+    }
+    const matches = await respMatches.json();
+    const computed = computeStandingsFromMatches(matches);
+    renderStandingsTable(computed);
     const upcomingStatuses = new Set(["scheduled", "upcoming", "future", "pending"]);
     const playedStatuses = new Set(["played", "finished", "completed"]);
 
@@ -364,5 +364,83 @@ function renderStandingsTable(standings) {
   table.appendChild(tbody);
   container.innerHTML = '';
   container.appendChild(table);
+}
+
+// Calcule un classement simple (points 3/1/0) à partir d'un tableau de matchs
+function computeStandingsFromMatches(matches) {
+  const now = new Date();
+  const playedStatuses = new Set(["played", "finished", "completed"]);
+
+  const stats = {};
+  const ensureTeam = (name) => {
+    if (!stats[name]) {
+      stats[name] = { played: 0, won: 0, draw: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 };
+    }
+  };
+
+  matches.forEach((m) => {
+    const matchDate = parseMatchDate(m.match_date);
+    const status = (m.status || '').toString().toLowerCase();
+    // Considérer match joué si scores fournis, statut joué, ou date passée
+    const hasScores = m.home_score != null && m.away_score != null;
+    const isPlayed = hasScores || playedStatuses.has(status) || matchDate <= now;
+    if (!isPlayed) return;
+
+    const home = m.home_team || 'Unknown';
+    const away = m.away_team || 'Unknown';
+    ensureTeam(home);
+    ensureTeam(away);
+
+    const hs = Number(m.home_score ?? 0);
+    const as = Number(m.away_score ?? 0);
+
+    stats[home].played += 1;
+    stats[away].played += 1;
+    stats[home].goals_for += hs;
+    stats[home].goals_against += as;
+    stats[away].goals_for += as;
+    stats[away].goals_against += hs;
+
+    if (hs > as) {
+      stats[home].won += 1;
+      stats[away].lost += 1;
+      stats[home].points += 3;
+    } else if (hs < as) {
+      stats[away].won += 1;
+      stats[home].lost += 1;
+      stats[away].points += 3;
+    } else {
+      stats[home].draw += 1;
+      stats[away].draw += 1;
+      stats[home].points += 1;
+      stats[away].points += 1;
+    }
+  });
+
+  const table = Object.keys(stats).map((team) => {
+    const s = stats[team];
+    const gd = s.goals_for - s.goals_against;
+    return {
+      team,
+      played: s.played,
+      won: s.won,
+      draw: s.draw,
+      lost: s.lost,
+      goals_for: s.goals_for,
+      goals_against: s.goals_against,
+      goal_diff: gd,
+      points: s.points,
+    };
+  });
+
+  table.sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    if (b.goal_diff !== a.goal_diff) return b.goal_diff - a.goal_diff;
+    if (b.goals_for !== a.goals_for) return b.goals_for - a.goals_for;
+    return a.team.localeCompare(b.team);
+  });
+
+  // Ajouter la position
+  return table.map((r, idx) => ({ position: idx + 1, ...r }));
 }
 
